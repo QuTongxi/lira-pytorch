@@ -14,22 +14,25 @@ import torch
 import wandb
 from torch import nn
 from torch.nn import functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from torchvision import models, transforms
 from torchvision.datasets import CIFAR10
 from tqdm import tqdm
 
 from wide_resnet import WideResNet
 
+import quant as Qu
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--lr", default=0.1, type=float)
-parser.add_argument("--epochs", default=1, type=int)
+parser.add_argument("--epochs", default=10, type=int)
 parser.add_argument("--n_shadows", default=16, type=int)
 parser.add_argument("--shadow_id", default=1, type=int)
 parser.add_argument("--model", default="resnet18", type=str)
 parser.add_argument("--pkeep", default=0.5, type=float)
-parser.add_argument("--savedir", default="exp/cifar10", type=str)
+parser.add_argument("--savedir", default="./exp/cifar10", type=str)
 parser.add_argument("--debug", action="store_true")
+parser.add_argument("--quantize",default=0,type=int)
 args = parser.parse_args()
 
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps")
@@ -59,7 +62,8 @@ def run():
             transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2470, 0.2435, 0.2616]),
         ]
     )
-    datadir = Path().home() / "opt/data/cifar"
+    # datadir = Path().home() / "opt/data/cifar"
+    datadir = "./cifar"
     train_ds = CIFAR10(root=datadir, train=True, download=True, transform=train_transform)
     test_ds = CIFAR10(root=datadir, train=False, download=True, transform=test_transform)
 
@@ -123,6 +127,19 @@ def run():
         sched.step()
 
         wandb.log({"loss": loss_total / len(train_dl)})
+
+    if args.quantize != 0:
+        calibrate_set = random_split(train_dl, [0.1,0.9])[0]
+        calibrate_dl = DataLoader(calibrate_set, batch_size=32, shuffle=False, num_workers=2, drop_last=True) 
+        Qu.runPTQ(m, calibrate_dl, test_dl)
+        
+        print(f"[test] acc_test: {get_acc(m, test_dl):.4f}")
+        wandb.log({"acc_test": get_acc(m, test_dl)})
+
+        savedir = os.path.join("./exp/qcifar10", str(args.shadow_id))
+        os.makedirs(savedir, exist_ok=True)
+        np.save(savedir + "/keep.npy", keep_bool)
+        torch.save(m.state_dict(), savedir + "/model.pt")
 
     print(f"[test] acc_test: {get_acc(m, test_dl):.4f}")
     wandb.log({"acc_test": get_acc(m, test_dl)})

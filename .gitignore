@@ -4,4 +4,5 @@ logs
 slurm
 gpu.sh
 *.out
+cifar
 

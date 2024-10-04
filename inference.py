@@ -20,7 +20,7 @@ from wide_resnet import WideResNet
 parser = argparse.ArgumentParser()
 parser.add_argument("--n_queries", default=2, type=int)
 parser.add_argument("--model", default="resnet18", type=str)
-parser.add_argument("--savedir", default="exp/cifar10", type=str)
+parser.add_argument("--savedir", default="./exp/cifar10", type=str)
 args = parser.parse_args()
 
 
@@ -37,7 +37,8 @@ def run():
             transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2470, 0.2435, 0.2616]),
         ]
     )
-    datadir = Path().home() / "opt/data/cifar"
+    # datadir = Path().home() / "opt/data/cifar"
+    datadir = "./cifar"
     train_ds = CIFAR10(root=datadir, train=True, download=True, transform=transform)
     train_dl = DataLoader(train_ds, batch_size=128, shuffle=False, num_workers=4)
 

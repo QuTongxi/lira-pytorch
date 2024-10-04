@@ -25,7 +25,7 @@ import numpy as np
 from torchvision.datasets import CIFAR10
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--savedir", default="exp/cifar10", type=str)
+parser.add_argument("--savedir", default="./exp/cifar10", type=str)
 args = parser.parse_args()
 
 
@@ -56,7 +56,8 @@ def load_one(path):
 
 
 def get_labels():
-    datadir = Path().home() / "opt/data/cifar"
+    # datadir = Path().home() / "opt/data/cifar"
+    datadir = "./cifar"
     train_ds = CIFAR10(root=datadir, train=True, download=True)
     return np.array(train_ds.targets)
 
