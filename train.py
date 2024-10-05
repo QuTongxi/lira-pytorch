@@ -21,6 +21,7 @@ from tqdm import tqdm
 
 from wide_resnet import WideResNet
 
+# import quantization lib
 import quant as Qu
 
 parser = argparse.ArgumentParser()
