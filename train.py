@@ -26,14 +26,14 @@ import quant as Qu
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--lr", default=0.1, type=float)
-parser.add_argument("--epochs", default=10, type=int)
+parser.add_argument("--epochs", default=100, type=int)
 parser.add_argument("--n_shadows", default=16, type=int)
 parser.add_argument("--shadow_id", default=1, type=int)
 parser.add_argument("--model", default="resnet18", type=str)
 parser.add_argument("--pkeep", default=0.5, type=float)
 parser.add_argument("--savedir", default="./exp/cifar10", type=str)
 parser.add_argument("--debug", action="store_true")
-parser.add_argument("--quantize",default=0,type=int)
+parser.add_argument("--quantize",default=1,type=int)
 args = parser.parse_args()
 
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps")

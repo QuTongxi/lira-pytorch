@@ -34,6 +34,7 @@ parser.add_argument("--pkeep", default=0.5, type=float)
 parser.add_argument("--savedir", default="./exp/cifar10", type=str)
 parser.add_argument("--debug", action="store_true")
 parser.add_argument("--quantize",default=0,type=int)
+parser.add_argument("--q_only",default=0,type=int)
 args = parser.parse_args()
 
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("mps")
@@ -124,6 +125,7 @@ def run():
     calibrate_set = random_split(train_dl, [0.1,0.9])[0]
     calibrate_dl = DataLoader(calibrate_set, batch_size=32, shuffle=False, num_workers=2, drop_last=True) 
     Qu.runPTQ(m, calibrate_dl, test_dl)
+    # Qu.run_int4_quant(m)
     
     print(f"[test] acc_test: {get_acc(m, test_dl):.4f}")
     wandb.log({"acc_test": get_acc(m, test_dl)})
@@ -133,7 +135,27 @@ def run():
     np.save(savedir + "/quant_keep.npy", keep_bool)
     torch.save(m.state_dict(), savedir + "/quant_model.pt")
 
+def quantize_only():
+    test_transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2470, 0.2435, 0.2616]),
+        ]
+    )
 
+    datadir = "./cifar"
+    test_ds = CIFAR10(root=datadir, train=False, download=True, transform=test_transform)
+
+    test_dl = DataLoader(test_ds, batch_size=128, shuffle=False, num_workers=4)
+    # Model
+    m = models.resnet18(weights=None, num_classes=10)
+    m.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    m.maxpool = nn.Identity()
+    m.load_state_dict(torch.load("./target/target_model.pt",weights_only=True))
+    
+    m = m.to(dtype=torch.bfloat16)
+    m = m.to(DEVICE)
+    Qu.run_int4_quant(m, test_dl)
 
 
 @torch.no_grad()
@@ -149,4 +171,7 @@ def get_acc(model, dl):
 
 
 if __name__ == "__main__":
-    run()
+    if args.q_only != 0:
+        quantize_only()
+    else:
+        run()

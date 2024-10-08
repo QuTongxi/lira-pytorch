@@ -7,6 +7,12 @@ from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, random_split
 from torchvision import models, transforms
+
+from torchao.quantization import (  
+    quantize_,  
+    int4_weight_only,  
+)  
+
 class PTQBasicBlock(models.resnet.BasicBlock):
     def __init__(self, block): 
         self.__dict__ = dict(vars(block))
@@ -35,7 +41,6 @@ class PTQBasicBlock(models.resnet.BasicBlock):
         tq.fuse_modules(self, ["conv2", "bn2"],inplace=True)
         if self.downsample:
             tq.fuse_modules(self.downsample, ["0", "1"], inplace=True)
-
 
 class MyPTQModel(models.ResNet):
     def __init__(self, model):
@@ -89,8 +94,6 @@ class MyPTQModel(models.ResNet):
         for nm,ch in self.named_children():
             print(nm, ch)
                    
-
-
 def runPTQ(model, calibrate_dl, test_dl):
     tmp = copy.deepcopy(model)
     m = MyPTQModel(tmp)
@@ -111,13 +114,10 @@ def runPTQ(model, calibrate_dl, test_dl):
     # print(f"[test] acc_test: {get_acc(m, test_dl):.4f}")
     return    
 
-        
-
 def runPTQ_1(model, calibrate_dl, test_dl):
     nums = [1024]
     for num in nums:
         run_step(num,model,calibrate_dl,test_dl)
-
 
 def run_step(argv,model, calibrate_dl, test_dl):
     tmp = copy.deepcopy(model)
@@ -146,7 +146,11 @@ def run_step(argv,model, calibrate_dl, test_dl):
     print(f"[test] acc_test: {get_acc(m, test_dl):.4f}")
     return
 
-
+def run_int4_quant(model, test_dl):
+    quantize_(model,int4_weight_only())
+    print_size_of_model(model)
+    print(f"[test in quant] acc_test: {get_acc_cuda(model, test_dl):.4f}")
+    return
 
 
 
@@ -181,7 +185,26 @@ def get_acc(model, dl):
 
     return acc.item()
 
+@torch.no_grad()
+def get_acc_cuda(model, dl):
+    model.cuda()
+    start_time = time.time()  # 记录开始时间
+    
+    acc = []
+    for x, y in dl:
+        x, y = x.to("cuda"), y.to("cuda")
+        
+        acc.append(torch.argmax(model(x), dim=1) == y)
+    
+    s = len(acc)
+    acc = torch.cat(acc)
+    acc = torch.sum(acc) / len(acc)
 
+    end_time = time.time()  # 记录结束时间
+    elapsed_time = (end_time - start_time) / s    # 计算运行时间
+    print(f"Time taken for get_acc: {elapsed_time:.4f} seconds")  # 打印运行时间
+
+    return acc.item()
 
 
 def print_size_of_model(model):

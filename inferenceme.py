@@ -18,7 +18,7 @@ from tqdm import tqdm
 from wide_resnet import WideResNet
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--n_queries", default=2, type=int)
+parser.add_argument("--n_queries", default=5, type=int)
 parser.add_argument("--model", default="resnet18", type=str)
 parser.add_argument("--savedir", default="./target", type=str)
 args = parser.parse_args()

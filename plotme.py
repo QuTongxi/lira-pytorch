@@ -26,6 +26,8 @@ import numpy as np
 import scipy.stats
 from sklearn.metrics import auc, roc_curve
 
+import json as js
+
 matplotlib.rcParams["pdf.fonttype"] = 42
 matplotlib.rcParams["ps.fonttype"] = 42
 
@@ -35,7 +37,7 @@ parser.add_argument("--quantize", default=0, type=int)
 args = parser.parse_args()
 
 
-
+data = {}
 
 def sweep(score, x):
     """
@@ -64,6 +66,7 @@ def load_data():
     target_keep = np.array(target_keep)
     target_scores = np.array(target_scores)
 
+
     for path in os.listdir(args.savedir):
         scores.append(np.load(os.path.join(args.savedir, path, "scores.npy")))
         keep.append(np.load(os.path.join(args.savedir, path, "keep.npy")))
@@ -72,6 +75,83 @@ def load_data():
 
     return scores, keep
 
+
+import numpy as np
+from sklearn.metrics import roc_curve
+
+def analyze(pred, ans, method):
+    print("\n"+method)
+    # Take the negative of predictions and convert to NumPy array
+    pred = [-x for x in pred]
+    pred = np.array(pred)
+    ans = np.array(ans)
+    
+    # Calculate and print the mean and standard deviation of predictions
+    print(f"prediction: {np.mean(pred):.5f} with std: {np.std(pred):.5f}")
+    
+    # Group the predictions based on the true labels
+    real_true_group = pred[ans]
+    real_false_group = pred[~ans]
+    
+    # Output the mean and standard deviation for true positives and true negatives
+    print(f"real true: {np.mean(real_true_group):.5f} with std: {np.std(real_true_group):.5f}")
+    print(f"real false: {np.mean(real_false_group):.5f} with std: {np.std(real_false_group):.5f}")
+    
+    # Compute false positive rate, true positive rate, and thresholds
+    fpr, tpr, threshold = roc_curve(ans, pred)
+    acc = np.max(1 - (fpr + (1 - tpr)) / 2)
+    
+    # Get TPR and threshold values
+    low_tpr = tpr[np.where(fpr < 0.001)[0][-1]]
+    low_threshold = threshold[np.where(fpr < 0.001)[0][-1]]
+    
+    # Output accuracy, TPR at low false positive rate, and the threshold
+    print(f"acc: {acc:.5f}, TPR@0.1%%FPR: {low_tpr:.5f}, with threshold: {low_threshold:.5f}")
+    
+    # Select predictions greater than the low threshold where ans is true
+    pred_true = pred[(pred > low_threshold) & ans]
+    
+    # Output the mean and standard deviation of predicted true values, or output NAN
+    if len(pred_true) != 0:
+        print(f"pred true when low TPR: {np.mean(pred_true):.5f} with std: {np.std(pred_true):.5f}")
+    else:
+        print("pred true when low TPR: NAN with std: NAN")
+        
+        
+    # save to a json file
+    fname = "saves.json"
+    if os.path.exists(fname):
+        with open(fname, "r") as file:
+            data = js.load(file)
+    else:
+        data[method] = {
+            "mean_pred" : np.mean(pred),
+            "mean_pred_std" : np.std(pred),
+            "real_true" : np.mean(real_true_group),
+            "real_true_std" : np.std(real_false_group),
+            "real_false" : np.mean(real_false_group),
+            "real_false_std" : np.std(real_false_group),
+            "accuracy" : acc,
+            "tpr" : low_tpr,
+            "threshold" : low_threshold,
+            "low_fpr_pred" : np.mean(pred_true),
+            "low_fpr_pred_std" : np.std(pred_true)
+                
+        }
+
+    
+def do_analyze(fn, keep, scores, method):
+    prediction, answers = fn(keep, scores, target_keep, target_scores)
+    analyze(prediction, answers, method)
+    pass  
+
+
+def analyze_all():
+    do_analyze(generate_ours, keep, scores, "online")
+    do_analyze(functools.partial(generate_ours, fix_variance=True), keep, scores, "online(fix-variance)")
+    do_analyze(functools.partial(generate_ours_offline), keep, scores, "offline")
+    do_analyze(functools.partial(generate_ours_offline, fix_variance=True), keep, scores, "offline(fix-variance)")
+    
 
 def generate_ours(keep, scores, check_keep, check_scores, in_size=100000, out_size=100000, fix_variance=False):
     """
@@ -85,13 +165,17 @@ def generate_ours(keep, scores, check_keep, check_scores, in_size=100000, out_si
     for j in range(scores.shape[1]):
         dat_in.append(scores[keep[:, j], j, :])
         dat_out.append(scores[~keep[:, j], j, :])
+        
+    # dat_in has the shape of (50000, 8, 5) 8 is because half of shadow models have the centain data
 
     in_size = min(min(map(len, dat_in)), in_size)
     out_size = min(min(map(len, dat_out)), out_size)
 
     dat_in = np.array([x[:in_size] for x in dat_in])
     dat_out = np.array([x[:out_size] for x in dat_out])
-
+    
+    # size of dat_in (50000, 8, n_queries)
+    # size of mean_in (50000, n_queries)
     mean_in = np.median(dat_in, 1)
     mean_out = np.median(dat_out, 1)
 
@@ -102,16 +186,21 @@ def generate_ours(keep, scores, check_keep, check_scores, in_size=100000, out_si
         std_in = np.std(dat_in, 1)
         std_out = np.std(dat_out, 1)
 
+    # std_in is a float point number when fixing variance, it is in shape of (50000, n_queries) when not fixing variance
+        
+
     prediction = []
     answers = []
     for ans, sc in zip(check_keep, check_scores):
         pr_in = -scipy.stats.norm.logpdf(sc, mean_in, std_in + 1e-30)
         pr_out = -scipy.stats.norm.logpdf(sc, mean_out, std_out + 1e-30)
         score = pr_in - pr_out
-
         prediction.extend(score.mean(1))
         answers.extend(ans)
+        
+    np.mean
 
+    
     return prediction, answers
 
 
@@ -146,6 +235,7 @@ def generate_ours_offline(keep, scores, check_keep, check_scores, in_size=100000
 
         prediction.extend(score.mean(1))
         answers.extend(ans)
+        
     return prediction, answers
 
 
@@ -220,3 +310,4 @@ def fig_fpr_tpr():
 if __name__ == "__main__":
     load_data()
     fig_fpr_tpr()
+    # analyze_all()
